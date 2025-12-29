@@ -30,9 +30,8 @@ type NamespaceStateSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of NamespaceState. Edit namespacestate_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// NamespaceClass is the name of the associated NamespaceClass
+	NamespaceClass string `json:"namespaceClass"`
 }
 
 // NamespaceStateStatus defines the observed state of NamespaceState.
@@ -59,6 +58,7 @@ type NamespaceStateStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
 // +kubebuilder:subresource:status
 
 // NamespaceState is the Schema for the namespacestates API

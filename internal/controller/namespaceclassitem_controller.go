@@ -36,6 +36,7 @@ type NamespaceClassItemReconciler struct {
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclassitems,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclassitems/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclassitems/finalizers,verbs=update
+// +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclasses,verbs=get;list;watch;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -49,7 +50,41 @@ type NamespaceClassItemReconciler struct {
 func (r *NamespaceClassItemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	// Fetch the NamespaceClassItem instance
+	var nci policyv1alpha.NamespaceClassItem
+	if err := r.Get(ctx, req.NamespacedName, &nci); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		// NamespaceClassItem not found, ignore
+		return ctrl.Result{}, nil
+	}
+
+	// List all NamespaceClass and check which ones reference this item
+	var ncList policyv1alpha.NamespaceClassList
+	if err := r.List(ctx, &ncList); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	for _, nc := range ncList.Items {
+		contains := false
+		for _, item := range nc.Spec.Items {
+			if item == nci.Name {
+				contains = true
+				break
+			}
+		}
+		if contains {
+			// Add annotation to trigger reconcile
+			if nc.Annotations == nil {
+				nc.Annotations = make(map[string]string)
+			}
+			nc.Annotations["namespaceclassitem.akuity.io/updated"] = "true"
+			if err := r.Update(ctx, &nc); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
 
 	return ctrl.Result{}, nil
 }

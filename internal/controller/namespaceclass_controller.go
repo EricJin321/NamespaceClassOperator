@@ -36,6 +36,7 @@ type NamespaceClassReconciler struct {
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclasses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclasses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=policy.akuity.io,resources=namespacestates,verbs=get;list;watch;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -59,20 +60,33 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// For each item, ensure the label is set on the NamespaceClass
-	for _, item := range nc.Spec.Items {
-		labelKey := "namespaceclassitem.akuity.io/" + item
-		if nc.Labels == nil {
-			nc.Labels = make(map[string]string)
-		}
-		if _, exists := nc.Labels[labelKey]; !exists {
-			nc.Labels[labelKey] = "true"
+	// List all NamespaceState and ensure those that reference this class have the annotation
+	var nsList policyv1alpha.NamespaceStateList
+	if err := r.List(ctx, &nsList); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	for _, nsState := range nsList.Items {
+		if nsState.Spec.NamespaceClass == nc.Name {
+			if _, hasAnnotation := nsState.Annotations["namespaceclass.akuity.io/class-updated"]; !hasAnnotation {
+				// Add annotation to trigger NamespaceState reconcile
+				if nsState.Annotations == nil {
+					nsState.Annotations = make(map[string]string)
+				}
+				nsState.Annotations["namespaceclass.akuity.io/class-updated"] = "true"
+				if err := r.Update(ctx, &nsState); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
 		}
 	}
 
-	// Update the NamespaceClass if labels changed
-	if err := r.Update(ctx, &nc); err != nil {
-		return ctrl.Result{}, err
+	// Check if it has the trigger annotation and remove it
+	if _, hasAnnotation := nc.Annotations["namespaceclassitem.akuity.io/updated"]; hasAnnotation {
+		delete(nc.Annotations, "namespaceclassitem.akuity.io/updated")
+		if err := r.Update(ctx, &nc); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil

@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -47,6 +48,7 @@ func SetupNamespaceClassItemWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).For(&policyv1alpha.NamespaceClassItem{}).
 		WithValidator(&NamespaceClassItemCustomValidator{
 			Client: dynamicClient,
+			Reader: mgr.GetClient(),
 		}).
 		Complete()
 }
@@ -64,6 +66,7 @@ func SetupNamespaceClassItemWebhookWithManager(mgr ctrl.Manager) error {
 // as this struct is used only for temporary operations and does not need to be deeply copied.
 type NamespaceClassItemCustomValidator struct {
 	Client dynamic.Interface
+	Reader client.Client
 }
 
 var _ webhook.CustomValidator = &NamespaceClassItemCustomValidator{}
@@ -108,7 +111,18 @@ func (v *NamespaceClassItemCustomValidator) ValidateDelete(ctx context.Context, 
 	}
 	namespaceclassitemlog.Info("Validation for NamespaceClassItem upon deletion", "name", namespaceclassitem.GetName())
 
-	// TODO(user): fill in your validation logic upon object deletion.
+	// Check if any NamespaceClass references this item
+	var ncList policyv1alpha.NamespaceClassList
+	if err := v.Reader.List(context.TODO(), &ncList); err != nil {
+		return nil, fmt.Errorf("failed to list NamespaceClass: %w", err)
+	}
+	for _, nc := range ncList.Items {
+		for _, item := range nc.Spec.Items {
+			if item == namespaceclassitem.GetName() {
+				return nil, fmt.Errorf("cannot delete NamespaceClassItem %s: referenced by NamespaceClass %s", namespaceclassitem.GetName(), nc.GetName())
+			}
+		}
+	}
 
 	return nil, nil
 }

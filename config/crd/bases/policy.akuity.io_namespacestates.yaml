@@ -12,7 +12,7 @@ spec:
     listKind: NamespaceStateList
     plural: namespacestates
     singular: namespacestate
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1alpha
     schema:
@@ -39,10 +39,11 @@ spec:
           spec:
             description: spec defines the desired state of NamespaceState
             properties:
-              foo:
-                description: foo is an example field of NamespaceState. Edit namespacestate_types.go
-                  to remove/update
+              namespaceClass:
+                description: NamespaceClass is the name of the associated NamespaceClass
                 type: string
+            required:
+            - namespaceClass
             type: object
           status:
             description: status defines the observed state of NamespaceState

@@ -20,10 +20,13 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	policyv1alpha "github.com/EricJin321/NamespaceClassOperator/api/v1alpha"
 )
 
 // NamespaceReconciler reconciles a Namespace object
@@ -34,6 +37,7 @@ type NamespaceReconciler struct {
 
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=namespaces/status,verbs=get
+// +kubebuilder:rbac:groups=policy.akuity.io,resources=namespacestates,verbs=get;list;watch;create;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -47,7 +51,76 @@ type NamespaceReconciler struct {
 func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	// Fetch the Namespace instance
+	var ns corev1.Namespace
+	if err := r.Get(ctx, req.NamespacedName, &ns); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		// Namespace not found, ignore
+		return ctrl.Result{}, nil
+	}
+
+	// Check if the namespace has the label namespaceclass.akuity.io/name
+	labelKey := "namespaceclass.akuity.io/name"
+	className, exists := ns.Labels[labelKey]
+	if !exists {
+		// No label, check if NamespaceState exists and delete it
+		var nsState policyv1alpha.NamespaceState
+		err := r.Get(ctx, client.ObjectKey{Name: ns.Name}, &nsState)
+		if err == nil {
+			// Exists, delete it
+			if err := r.Delete(ctx, &nsState); err != nil {
+				return ctrl.Result{}, err
+			}
+		} else if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		// No label and no state, nothing to do
+		return ctrl.Result{}, nil
+	}
+
+	// Check if NamespaceState exists
+	var nsState policyv1alpha.NamespaceState
+	err := r.Get(ctx, client.ObjectKey{Name: ns.Name}, &nsState)
+	if err != nil && client.IgnoreNotFound(err) != nil {
+		return ctrl.Result{}, err
+	}
+
+	if client.IgnoreNotFound(err) == nil {
+		// NamespaceState exists, check if it matches
+		if nsState.Spec.NamespaceClass != className {
+			// Mismatch, add annotation for pending update
+			if nsState.Annotations == nil {
+				nsState.Annotations = make(map[string]string)
+			}
+			nsState.Annotations["namespaceclass.akuity.io/pending-update"] = className
+			if err := r.Update(ctx, &nsState); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	} else {
+		// NamespaceState does not exist, create it
+		nsState = policyv1alpha.NamespaceState{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: ns.Name,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: ns.APIVersion,
+						Kind:       ns.Kind,
+						Name:       ns.Name,
+						UID:        ns.UID,
+					},
+				},
+			},
+			Spec: policyv1alpha.NamespaceStateSpec{
+				NamespaceClass: className,
+			},
+		}
+		if err := r.Create(ctx, &nsState); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }

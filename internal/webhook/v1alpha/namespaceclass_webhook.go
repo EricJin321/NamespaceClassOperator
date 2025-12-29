@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,7 +48,7 @@ func SetupNamespaceClassWebhookWithManager(mgr ctrl.Manager) error {
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 // NOTE: If you want to customise the 'path', use the flags '--defaulting-path' or '--validation-path'.
-// +kubebuilder:webhook:path=/validate-policy-akuity-io-v1alpha-namespaceclass,mutating=false,failurePolicy=fail,sideEffects=None,groups=policy.akuity.io,resources=namespaceclasses,verbs=create;update,versions=v1alpha,name=vnamespaceclass-v1alpha.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-policy-akuity-io-v1alpha-namespaceclass,mutating=false,failurePolicy=fail,sideEffects=None,groups=policy.akuity.io,resources=namespaceclasses,verbs=create;update;delete,versions=v1alpha,name=vnamespaceclass-v1alpha.kb.io,admissionReviewVersions=v1
 
 // NamespaceClassCustomValidator struct is responsible for validating the NamespaceClass resource
 // when it is created, updated, or deleted.
@@ -100,7 +101,17 @@ func (v *NamespaceClassCustomValidator) ValidateDelete(ctx context.Context, obj 
 	}
 	namespaceclasslog.Info("Validation for NamespaceClass upon deletion", "name", namespaceclass.GetName())
 
-	// TODO(user): fill in your validation logic upon object deletion.
+	// Query all namespaces to check if any reference this NamespaceClass
+	var nsList corev1.NamespaceList
+	if err := v.Client.List(ctx, &nsList); err != nil {
+		return nil, fmt.Errorf("failed to list namespaces: %w", err)
+	}
+
+	for _, ns := range nsList.Items {
+		if ns.Labels != nil && ns.Labels["namespaceclass.akuity.io/name"] == namespaceclass.Name {
+			return nil, fmt.Errorf("cannot delete NamespaceClass %s, it is referenced by namespace %s", namespaceclass.Name, ns.Name)
+		}
+	}
 
 	return nil, nil
 }

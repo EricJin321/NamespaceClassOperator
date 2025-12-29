@@ -40,10 +40,11 @@ spec:
           spec:
             description: spec defines the desired state of NamespaceItemInstance
             properties:
-              foo:
-                description: foo is an example field of NamespaceItemInstance. Edit
-                  namespaceiteminstance_types.go to remove/update
+              namespaceClassItem:
+                description: NamespaceClassItem is the name of the referenced NamespaceClassItem
                 type: string
+            required:
+            - namespaceClassItem
             type: object
           status:
             description: status defines the observed state of NamespaceItemInstance
@@ -117,6 +118,10 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              lastAppliedResourceVersion:
+                description: LastAppliedResourceVersion records the resource version
+                  of the NamespaceClassItem last applied
+                type: string
             type: object
         required:
         - spec

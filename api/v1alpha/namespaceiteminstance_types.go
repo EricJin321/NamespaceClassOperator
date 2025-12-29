@@ -30,9 +30,8 @@ type NamespaceItemInstanceSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of NamespaceItemInstance. Edit namespaceiteminstance_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// NamespaceClassItem is the name of the referenced NamespaceClassItem
+	NamespaceClassItem string `json:"namespaceClassItem"`
 }
 
 // NamespaceItemInstanceStatus defines the observed state of NamespaceItemInstance.
@@ -42,6 +41,9 @@ type NamespaceItemInstanceStatus struct {
 
 	// For Kubernetes API conventions, see:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+
+	// LastAppliedResourceVersion records the resource version of the NamespaceClassItem last applied
+	LastAppliedResourceVersion string `json:"lastAppliedResourceVersion,omitempty"`
 
 	// conditions represent the current state of the NamespaceItemInstance resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
