@@ -63,31 +63,8 @@ func (r *NamespaceStateReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// Check if the spec class exists
-	var specClassExists bool
-	if nsState.Spec.NamespaceClass != "" {
-		var specNc policyv1alpha.NamespaceClass
-		err := r.Get(ctx, client.ObjectKey{Name: nsState.Spec.NamespaceClass}, &specNc)
-		specClassExists = err == nil
-	} else {
-		specClassExists = false
-	}
-
 	// Check if pending update is set
-	pending, hasPending := nsState.Annotations["namespaceclass.akuity.io/pending-update"]
-
-	// If spec class does not exist or has pending update, delete all owned NamespaceItemInstances
-	if !specClassExists || hasPending {
-		var niiList policyv1alpha.NamespaceItemInstanceList
-		if err := r.List(ctx, &niiList, client.InNamespace(nsState.Name)); err != nil {
-			return ctrl.Result{}, err
-		}
-		for _, nii := range niiList.Items {
-			if err := r.Delete(ctx, &nii); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-	}
+	pending, hasPending := nsState.Annotations[policyv1alpha.AnnotationNamespaceClassPendingUpdate]
 
 	// Now determine target class name
 	var targetClassName string
@@ -100,13 +77,14 @@ func (r *NamespaceStateReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Check if target class exists
 	var nc policyv1alpha.NamespaceClass
 	err := r.Get(ctx, client.ObjectKey{Name: targetClassName}, &nc)
+	var desiredItems []string
 	if err != nil {
-		// Target class does not exist, nothing more to do
-		return ctrl.Result{}, nil
+		// Target class does not exist, use empty desired items to clean up all NIIs
+		desiredItems = []string{}
+	} else {
+		// Now reconcile to the target class
+		desiredItems = nc.Spec.Items
 	}
-
-	// Now reconcile to the target class
-	desiredItems := nc.Spec.Items
 
 	// List existing NamespaceItemInstances in the namespace
 	var existingNIIList policyv1alpha.NamespaceItemInstanceList
@@ -126,7 +104,7 @@ func (r *NamespaceStateReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if nii.Annotations == nil {
 				nii.Annotations = make(map[string]string)
 			}
-			nii.Annotations["namespaceclassitem.akuity.io/updated"] = "true"
+			nii.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated] = "true"
 			if err := r.Update(ctx, &nii); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -164,11 +142,11 @@ func (r *NamespaceStateReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Update spec and remove annotations only if necessary
-	needUpdate := hasPending || (nsState.Annotations != nil && nsState.Annotations["namespaceclassitem.akuity.io/updated"] != "") || nsState.Spec.NamespaceClass != targetClassName
+	needUpdate := hasPending || (nsState.Annotations != nil && nsState.Annotations[policyv1alpha.AnnotationNamespaceClassUpdated] != "") || nsState.Spec.NamespaceClass != targetClassName
 	if needUpdate {
 		nsState.Spec.NamespaceClass = targetClassName
-		delete(nsState.Annotations, "namespaceclass.akuity.io/pending-update")
-		delete(nsState.Annotations, "namespaceclassitem.akuity.io/updated")
+		delete(nsState.Annotations, policyv1alpha.AnnotationNamespaceClassPendingUpdate)
+		delete(nsState.Annotations, policyv1alpha.AnnotationNamespaceClassUpdated)
 		if err := r.Update(ctx, &nsState); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -179,6 +157,17 @@ func (r *NamespaceStateReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NamespaceStateReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Add field index for spec.namespaceClass to optimize queries
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &policyv1alpha.NamespaceState{}, "spec.namespaceClass", func(rawObj client.Object) []string {
+		nsState := rawObj.(*policyv1alpha.NamespaceState)
+		if nsState.Spec.NamespaceClass != "" {
+			return []string{nsState.Spec.NamespaceClass}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&policyv1alpha.NamespaceState{}).
 		Named("namespacestate").

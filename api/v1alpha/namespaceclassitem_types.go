@@ -57,6 +57,14 @@ type NamespaceClassItemStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// ReferencedBy lists the names of NamespaceClass resources that reference this NamespaceClassItem
+	// +optional
+	ReferencedBy []string `json:"referencedBy,omitempty"`
+
+	// ObservedGeneration is the generation last observed by the controller
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // +kubebuilder:object:root=true

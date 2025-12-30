@@ -42,8 +42,9 @@ type NamespaceItemInstanceStatus struct {
 	// For Kubernetes API conventions, see:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
 
-	// LastAppliedResourceVersion records the resource version of the NamespaceClassItem last applied
-	LastAppliedResourceVersion string `json:"lastAppliedResourceVersion,omitempty"`
+	// ObservedGeneration is the generation of the NamespaceClassItem last observed by the controller
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions represent the current state of the NamespaceItemInstance resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.

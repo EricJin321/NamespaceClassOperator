@@ -62,7 +62,7 @@ func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Check if the namespace has the label namespaceclass.akuity.io/name
-	labelKey := "namespaceclass.akuity.io/name"
+	labelKey := policyv1alpha.LabelNamespaceClassName
 	className, exists := ns.Labels[labelKey]
 	if !exists {
 		// No label, check if NamespaceState exists and delete it
@@ -94,7 +94,7 @@ func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if nsState.Annotations == nil {
 				nsState.Annotations = make(map[string]string)
 			}
-			nsState.Annotations["namespaceclass.akuity.io/pending-update"] = className
+			nsState.Annotations[policyv1alpha.AnnotationNamespaceClassPendingUpdate] = className
 			if err := r.Update(ctx, &nsState); err != nil {
 				return ctrl.Result{}, err
 			}

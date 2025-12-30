@@ -60,26 +60,44 @@ func (r *NamespaceClassItemReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	// List all NamespaceClass and check which ones reference this item
-	var ncList policyv1alpha.NamespaceClassList
-	if err := r.List(ctx, &ncList); err != nil {
+	// Check if spec has changed by comparing generation
+	specChanged := nci.Generation != nci.Status.ObservedGeneration
+
+	// If spec hasn't changed, nothing to do
+	if !specChanged {
+		return ctrl.Result{}, nil
+	}
+
+	// Update observed generation in status
+	nci.Status.ObservedGeneration = nci.Generation
+	if err := r.Status().Update(ctx, &nci); err != nil {
+		return ctrl.Result{}, err
+	}
+	// Re-fetch after status update
+	if err := r.Get(ctx, req.NamespacedName, &nci); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	for _, nc := range ncList.Items {
-		contains := false
-		for _, item := range nc.Spec.Items {
-			if item == nci.Name {
-				contains = true
-				break
+	// Trigger downstream reconcile since spec changed
+	// Use ReferencedBy from status to find referencing NamespaceClasses
+	referencingClasses := nci.Status.ReferencedBy
+
+	// Add annotation to trigger reconcile for each referencing NamespaceClass
+	for _, className := range referencingClasses {
+		var nc policyv1alpha.NamespaceClass
+		if err := r.Get(ctx, client.ObjectKey{Name: className}, &nc); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return ctrl.Result{}, err
 			}
+			continue // Class doesn't exist, skip
 		}
-		if contains {
-			// Add annotation to trigger reconcile
-			if nc.Annotations == nil {
-				nc.Annotations = make(map[string]string)
-			}
-			nc.Annotations["namespaceclassitem.akuity.io/updated"] = "true"
+
+		// Add annotation to trigger reconcile if not already present
+		if nc.Annotations == nil {
+			nc.Annotations = make(map[string]string)
+		}
+		if _, hasAnnotation := nc.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated]; !hasAnnotation {
+			nc.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated] = "true"
 			if err := r.Update(ctx, &nc); err != nil {
 				return ctrl.Result{}, err
 			}

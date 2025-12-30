@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -108,7 +109,7 @@ func (v *NamespaceClassCustomValidator) ValidateDelete(ctx context.Context, obj 
 	}
 
 	for _, ns := range nsList.Items {
-		if ns.Labels != nil && ns.Labels["namespaceclass.akuity.io/name"] == namespaceclass.Name {
+		if ns.Labels != nil && ns.Labels[policyv1alpha.LabelNamespaceClassName] == namespaceclass.Name {
 			return nil, fmt.Errorf("cannot delete NamespaceClass %s, it is referenced by namespace %s", namespaceclass.Name, ns.Name)
 		}
 	}
@@ -122,6 +123,9 @@ func (v *NamespaceClassCustomValidator) validateSpec(spec policyv1alpha.Namespac
 		return fmt.Errorf("items cannot be empty")
 	}
 
+	// Track unique resource identifiers to prevent conflicts
+	resourceMap := make(map[string]string) // key: "Group/Version/Resource/Name", value: itemName
+
 	for _, item := range spec.Items {
 		// Check if the NamespaceClassItem exists
 		var nci policyv1alpha.NamespaceClassItem
@@ -129,6 +133,28 @@ func (v *NamespaceClassCustomValidator) validateSpec(spec policyv1alpha.Namespac
 		if err != nil {
 			return fmt.Errorf("namespaceclassitem %s does not exist: %w", item, err)
 		}
+
+		// Parse the spec to extract resource information
+		var obj map[string]interface{}
+		if err := yaml.Unmarshal([]byte(nci.Spec.Spec), &obj); err != nil {
+			return fmt.Errorf("failed to parse spec for namespaceclassitem %s: %w", item, err)
+		}
+
+		// Extract name from the spec
+		name, ok := obj["metadata"].(map[string]interface{})["name"].(string)
+		if !ok || name == "" {
+			return fmt.Errorf("namespaceclassitem %s spec does not contain a valid name in metadata", item)
+		}
+
+		// Create unique key for this resource
+		resourceKey := fmt.Sprintf("%s/%s/%s/%s", nci.Spec.Group, nci.Spec.Version, nci.Spec.Resource, name)
+
+		// Check for conflicts
+		if existingItem, exists := resourceMap[resourceKey]; exists {
+			return fmt.Errorf("resource conflict: namespaceclassitem %s and %s both define the same resource %s", existingItem, item, resourceKey)
+		}
+
+		resourceMap[resourceKey] = item
 	}
 
 	return nil

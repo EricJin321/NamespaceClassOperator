@@ -36,6 +36,7 @@ type NamespaceClassReconciler struct {
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclasses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclasses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclassitems/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=policy.akuity.io,resources=namespacestates,verbs=get;list;watch;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -60,36 +61,145 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// List all NamespaceState and ensure those that reference this class have the annotation
+	// Handle deletion
+	if !nc.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &nc)
+	}
+
+	// Add finalizer if not present
+	if !containsString(nc.Finalizers, policyv1alpha.FinalizerNamespaceClass) {
+		nc.Finalizers = append(nc.Finalizers, policyv1alpha.FinalizerNamespaceClass)
+		if err := r.Update(ctx, &nc); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// List all NamespaceState that reference this class using field selector
 	var nsList policyv1alpha.NamespaceStateList
-	if err := r.List(ctx, &nsList); err != nil {
+	if err := r.List(ctx, &nsList, client.MatchingFields{"spec.namespaceClass": nc.Name}); err != nil {
 		return ctrl.Result{}, err
 	}
 
+	// Add annotation to trigger reconcile for all matching NamespaceStates
 	for _, nsState := range nsList.Items {
-		if nsState.Spec.NamespaceClass == nc.Name {
-			if _, hasAnnotation := nsState.Annotations["namespaceclass.akuity.io/class-updated"]; !hasAnnotation {
-				// Add annotation to trigger NamespaceState reconcile
-				if nsState.Annotations == nil {
-					nsState.Annotations = make(map[string]string)
-				}
-				nsState.Annotations["namespaceclass.akuity.io/class-updated"] = "true"
-				if err := r.Update(ctx, &nsState); err != nil {
-					return ctrl.Result{}, err
-				}
+		if _, hasAnnotation := nsState.Annotations[policyv1alpha.AnnotationNamespaceClassUpdated]; !hasAnnotation {
+			// Add annotation to trigger NamespaceState reconcile
+			if nsState.Annotations == nil {
+				nsState.Annotations = make(map[string]string)
+			}
+			nsState.Annotations[policyv1alpha.AnnotationNamespaceClassUpdated] = "true"
+			if err := r.Update(ctx, &nsState); err != nil {
+				return ctrl.Result{}, err
 			}
 		}
 	}
 
+	// Update ReferencedBy in NamespaceClassItems
+	if err := r.updateNamespaceClassItemReferences(ctx, nc); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Check if it has the trigger annotation and remove it
-	if _, hasAnnotation := nc.Annotations["namespaceclassitem.akuity.io/updated"]; hasAnnotation {
-		delete(nc.Annotations, "namespaceclassitem.akuity.io/updated")
+	if _, hasAnnotation := nc.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated]; hasAnnotation {
+		delete(nc.Annotations, policyv1alpha.AnnotationNamespaceClassItemUpdated)
 		if err := r.Update(ctx, &nc); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// handleDeletion handles NamespaceClass deletion, cleaning up references
+func (r *NamespaceClassReconciler) handleDeletion(ctx context.Context, nc *policyv1alpha.NamespaceClass) (ctrl.Result, error) {
+	// Clean up references in NamespaceClassItems
+	for _, itemName := range nc.Spec.Items {
+		var nci policyv1alpha.NamespaceClassItem
+		if err := r.Get(ctx, client.ObjectKey{Name: itemName}, &nci); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return ctrl.Result{}, err
+			}
+			continue
+		}
+
+		// Remove this class from ReferencedBy
+		var newRefs []string
+		for _, ref := range nci.Status.ReferencedBy {
+			if ref != nc.Name {
+				newRefs = append(newRefs, ref)
+			}
+		}
+		nci.Status.ReferencedBy = newRefs
+		if err := r.Status().Update(ctx, &nci); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Remove finalizer
+	nc.Finalizers = removeString(nc.Finalizers, policyv1alpha.FinalizerNamespaceClass)
+	if err := r.Update(ctx, nc); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// containsString checks if a string is in a slice
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+// removeString removes a string from a slice
+func removeString(slice []string, s string) []string {
+	var result []string
+	for _, item := range slice {
+		if item != s {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+// updateNamespaceClassItemReferences maintains the ReferencedBy field in NamespaceClassItems
+func (r *NamespaceClassReconciler) updateNamespaceClassItemReferences(ctx context.Context, nc policyv1alpha.NamespaceClass) error {
+	// For each item in the class, add this class to its ReferencedBy
+	for _, itemName := range nc.Spec.Items {
+		var nci policyv1alpha.NamespaceClassItem
+		if err := r.Get(ctx, client.ObjectKey{Name: itemName}, &nci); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return err
+			}
+			continue // Item doesn't exist, skip
+		}
+
+		// Check if already referenced
+		alreadyReferenced := false
+		for _, ref := range nci.Status.ReferencedBy {
+			if ref == nc.Name {
+				alreadyReferenced = true
+				break
+			}
+		}
+
+		if !alreadyReferenced {
+			// Add reference
+			nci.Status.ReferencedBy = append(nci.Status.ReferencedBy, nc.Name)
+			if err := r.Status().Update(ctx, &nci); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Note: Cleanup of old references would require tracking previous state
+	// For now, we assume references are added but not removed automatically
+	// This could be improved with finalizers or additional logic
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

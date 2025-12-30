@@ -100,6 +100,11 @@ func (v *NamespaceClassItemCustomValidator) ValidateUpdate(_ context.Context, ol
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 
+	// Check for conflicts with other NamespaceClassItems in the same NamespaceClasses
+	if err := v.validateNoConflicts(namespaceclassitem); err != nil {
+		return nil, fmt.Errorf("conflict validation failed: %w", err)
+	}
+
 	return nil, nil
 }
 
@@ -144,6 +149,77 @@ func (v *NamespaceClassItemCustomValidator) validateSpec(spec policyv1alpha.Name
 	_, err := v.Client.Resource(gvr).Namespace("namespaceclass-test").Create(context.TODO(), obj, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
 	if err != nil {
 		return fmt.Errorf("dry-run create failed for GVR %v: %w", gvr, err)
+	}
+
+	return nil
+}
+
+// validateNoConflicts checks that updating this NamespaceClassItem won't create conflicts
+// with other NamespaceClassItems in the same NamespaceClasses
+func (v *NamespaceClassItemCustomValidator) validateNoConflicts(namespaceclassitem *policyv1alpha.NamespaceClassItem) error {
+	// Find all NamespaceClasses that reference this item
+	var ncList policyv1alpha.NamespaceClassList
+	if err := v.Reader.List(context.TODO(), &ncList); err != nil {
+		return fmt.Errorf("failed to list NamespaceClass: %w", err)
+	}
+
+	// Parse the current item's spec to get its resource key
+	var currentObj map[string]interface{}
+	if err := yaml.Unmarshal([]byte(namespaceclassitem.Spec.Spec), &currentObj); err != nil {
+		return fmt.Errorf("failed to parse current item spec: %w", err)
+	}
+	currentName, ok := currentObj["metadata"].(map[string]interface{})["name"].(string)
+	if !ok || currentName == "" {
+		return fmt.Errorf("current item spec does not contain a valid name in metadata")
+	}
+	currentKey := fmt.Sprintf("%s/%s/%s/%s", namespaceclassitem.Spec.Group, namespaceclassitem.Spec.Version, namespaceclassitem.Spec.Resource, currentName)
+
+	// Check each NamespaceClass that references this item
+	for _, nc := range ncList.Items {
+		// Check if this NamespaceClass references our item
+		referencesCurrent := false
+		for _, item := range nc.Spec.Items {
+			if item == namespaceclassitem.GetName() {
+				referencesCurrent = true
+				break
+			}
+		}
+		if !referencesCurrent {
+			continue
+		}
+
+		// This NamespaceClass references our item, check all its items for conflicts
+		for _, itemName := range nc.Spec.Items {
+			if itemName == namespaceclassitem.GetName() {
+				continue // Skip ourselves
+			}
+
+			// Get the other item
+			var otherItem policyv1alpha.NamespaceClassItem
+			if err := v.Reader.Get(context.TODO(), client.ObjectKey{Name: itemName}, &otherItem); err != nil {
+				if client.IgnoreNotFound(err) != nil {
+					return fmt.Errorf("failed to get NamespaceClassItem %s: %w", itemName, err)
+				}
+				continue // Item doesn't exist, skip
+			}
+
+			// Parse the other item's spec
+			var otherObj map[string]interface{}
+			if err := yaml.Unmarshal([]byte(otherItem.Spec.Spec), &otherObj); err != nil {
+				return fmt.Errorf("failed to parse spec for NamespaceClassItem %s: %w", itemName, err)
+			}
+			otherName, ok := otherObj["metadata"].(map[string]interface{})["name"].(string)
+			if !ok || otherName == "" {
+				return fmt.Errorf("NamespaceClassItem %s spec does not contain a valid name in metadata", itemName)
+			}
+			otherKey := fmt.Sprintf("%s/%s/%s/%s", otherItem.Spec.Group, otherItem.Spec.Version, otherItem.Spec.Resource, otherName)
+
+			// Check for conflict
+			if currentKey == otherKey {
+				return fmt.Errorf("resource conflict in NamespaceClass %s: NamespaceClassItem %s and %s both define the same resource %s",
+					nc.GetName(), namespaceclassitem.GetName(), itemName, currentKey)
+			}
+		}
 	}
 
 	return nil

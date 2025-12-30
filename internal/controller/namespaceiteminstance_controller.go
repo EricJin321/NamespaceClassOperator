@@ -81,10 +81,10 @@ func (r *NamespaceItemInstanceReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, nil
 	}
 
-	currentRV := nci.ResourceVersion
+	currentGen := nci.Generation
 
 	// Check if update is needed
-	if nii.Status.LastAppliedResourceVersion != currentRV {
+	if nii.Status.ObservedGeneration != currentGen {
 		// Unmarshal the spec into unstructured
 		var obj unstructured.Unstructured
 		if err := yaml.Unmarshal([]byte(nci.Spec.Spec), &obj); err != nil {
@@ -133,7 +133,7 @@ func (r *NamespaceItemInstanceReconciler) Reconcile(ctx context.Context, req ctr
 		}
 
 		// Update status
-		nii.Status.LastAppliedResourceVersion = currentRV
+		nii.Status.ObservedGeneration = currentGen
 		if err := r.Status().Update(ctx, &nii); err != nil {
 			log.Error(err, "Failed to update status")
 			return ctrl.Result{}, err
@@ -141,8 +141,8 @@ func (r *NamespaceItemInstanceReconciler) Reconcile(ctx context.Context, req ctr
 	}
 
 	// Remove the updated annotation if present
-	if nii.Annotations != nil && nii.Annotations["namespaceclassitem.akuity.io/updated"] != "" {
-		delete(nii.Annotations, "namespaceclassitem.akuity.io/updated")
+	if nii.Annotations != nil && nii.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated] != "" {
+		delete(nii.Annotations, policyv1alpha.AnnotationNamespaceClassItemUpdated)
 		if err := r.Update(ctx, &nii); err != nil {
 			log.Error(err, "Failed to remove updated annotation")
 			return ctrl.Result{}, err
