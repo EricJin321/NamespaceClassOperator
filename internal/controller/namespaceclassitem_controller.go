@@ -48,45 +48,58 @@ type NamespaceClassItemReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.4/pkg/reconcile
 func (r *NamespaceClassItemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	// Fetch the NamespaceClassItem instance
 	var nci policyv1alpha.NamespaceClassItem
 	if err := r.Get(ctx, req.NamespacedName, &nci); err != nil {
 		if client.IgnoreNotFound(err) != nil {
+			log.Error(err, "Failed to get NamespaceClassItem", "namespaceClassItem", req.NamespacedName)
 			return ctrl.Result{}, err
 		}
 		// NamespaceClassItem not found, ignore
+		log.Info("NamespaceClassItem not found, ignoring", "namespaceClassItem", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
+
+	log.Info("Reconciling NamespaceClassItem", "component", "controller", "controller", "namespaceclassitem", "name", nci.Name, "spec", nci.Spec, "status", nci.Status)
 
 	// Check if spec has changed by comparing generation
 	specChanged := nci.Generation != nci.Status.ObservedGeneration
+	log.Info("Checking if NamespaceClassItem spec changed", "name", nci.Name, "generation", nci.Generation, "observedGeneration", nci.Status.ObservedGeneration, "specChanged", specChanged)
 
 	// If spec hasn't changed, nothing to do
 	if !specChanged {
+		log.Info("NamespaceClassItem spec not changed, skipping reconciliation", "name", nci.Name)
 		return ctrl.Result{}, nil
 	}
+
+	log.Info("NamespaceClassItem spec changed, updating status", "name", nci.Name)
 
 	// Update observed generation in status
 	nci.Status.ObservedGeneration = nci.Generation
 	if err := r.Status().Update(ctx, &nci); err != nil {
+		log.Error(err, "Failed to update NamespaceClassItem status", "name", nci.Name)
 		return ctrl.Result{}, err
 	}
 	// Re-fetch after status update
 	if err := r.Get(ctx, req.NamespacedName, &nci); err != nil {
+		log.Error(err, "Failed to re-fetch NamespaceClassItem after status update", "name", nci.Name)
 		return ctrl.Result{}, err
 	}
 
 	// Trigger downstream reconcile since spec changed
 	// Use ReferencedBy from status to find referencing NamespaceClasses
 	referencingClasses := nci.Status.ReferencedBy
+	log.Info("Triggering downstream reconcile for referencing NamespaceClasses", "item", nci.Name, "referencingClasses", referencingClasses)
 
 	// Add annotation to trigger reconcile for each referencing NamespaceClass
 	for _, className := range referencingClasses {
+		log.Info("Processing referencing NamespaceClass", "item", nci.Name, "class", className)
 		var nc policyv1alpha.NamespaceClass
 		if err := r.Get(ctx, client.ObjectKey{Name: className}, &nc); err != nil {
 			if client.IgnoreNotFound(err) != nil {
+				log.Error(err, "Failed to get referencing NamespaceClass", "item", nci.Name, "class", className)
 				return ctrl.Result{}, err
 			}
 			continue // Class doesn't exist, skip
@@ -97,13 +110,18 @@ func (r *NamespaceClassItemReconciler) Reconcile(ctx context.Context, req ctrl.R
 			nc.Annotations = make(map[string]string)
 		}
 		if _, hasAnnotation := nc.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated]; !hasAnnotation {
+			log.Info("Adding update annotation to NamespaceClass", "item", nci.Name, "class", className)
 			nc.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated] = "true"
 			if err := r.Update(ctx, &nc); err != nil {
+				log.Error(err, "Failed to add update annotation to NamespaceClass", "item", nci.Name, "class", className)
 				return ctrl.Result{}, err
 			}
+		} else {
+			log.Info("Update annotation already exists on NamespaceClass", "item", nci.Name, "class", className)
 		}
 	}
 
+	log.Info("NamespaceClassItem reconciliation completed successfully", "name", nci.Name)
 	return ctrl.Result{}, nil
 }
 

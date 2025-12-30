@@ -19,6 +19,18 @@ rules:
   verbs:
   - get
 - apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - policy.akuity.io
   resources:
   - namespaceclasses

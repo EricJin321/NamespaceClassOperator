@@ -49,27 +49,36 @@ type NamespaceClassReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.4/pkg/reconcile
 func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	// Fetch the NamespaceClass instance
 	var nc policyv1alpha.NamespaceClass
 	if err := r.Get(ctx, req.NamespacedName, &nc); err != nil {
 		if client.IgnoreNotFound(err) != nil {
+			log.Error(err, "Failed to get NamespaceClass", "namespaceClass", req.NamespacedName)
 			return ctrl.Result{}, err
 		}
 		// NamespaceClass not found, ignore
+		log.Info("NamespaceClass not found, ignoring", "namespaceClass", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 
+	log.Info("Reconciling NamespaceClass", "component", "controller", "controller", "namespaceclass", "name", nc.Name, "spec", nc.Spec, "status", nc.Status)
+
 	// Handle deletion
 	if !nc.DeletionTimestamp.IsZero() {
+		log.Info("Handling NamespaceClass deletion", "name", nc.Name)
 		return r.handleDeletion(ctx, &nc)
 	}
 
+	log.Info("Processing NamespaceClass reconciliation", "component", "controller", "controller", "namespaceclass", "name", nc.Name, "items", nc.Spec.Items)
+
 	// Add finalizer if not present
 	if !containsString(nc.Finalizers, policyv1alpha.FinalizerNamespaceClass) {
+		log.Info("Adding finalizer to NamespaceClass", "name", nc.Name, "finalizer", policyv1alpha.FinalizerNamespaceClass)
 		nc.Finalizers = append(nc.Finalizers, policyv1alpha.FinalizerNamespaceClass)
 		if err := r.Update(ctx, &nc); err != nil {
+			log.Error(err, "Failed to add finalizer to NamespaceClass", "name", nc.Name)
 			return ctrl.Result{}, err
 		}
 	}
@@ -77,18 +86,23 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// List all NamespaceState that reference this class using field selector
 	var nsList policyv1alpha.NamespaceStateList
 	if err := r.List(ctx, &nsList, client.MatchingFields{"spec.namespaceClass": nc.Name}); err != nil {
+		log.Error(err, "Failed to list NamespaceStates for class", "class", nc.Name)
 		return ctrl.Result{}, err
 	}
+
+	log.Info("Found NamespaceStates referencing this class", "class", nc.Name, "count", len(nsList.Items))
 
 	// Add annotation to trigger reconcile for all matching NamespaceStates
 	for _, nsState := range nsList.Items {
 		if _, hasAnnotation := nsState.Annotations[policyv1alpha.AnnotationNamespaceClassUpdated]; !hasAnnotation {
+			log.Info("Adding update annotation to NamespaceState", "class", nc.Name, "namespaceState", nsState.Name)
 			// Add annotation to trigger NamespaceState reconcile
 			if nsState.Annotations == nil {
 				nsState.Annotations = make(map[string]string)
 			}
 			nsState.Annotations[policyv1alpha.AnnotationNamespaceClassUpdated] = "true"
 			if err := r.Update(ctx, &nsState); err != nil {
+				log.Error(err, "Failed to add update annotation to NamespaceState", "class", nc.Name, "namespaceState", nsState.Name)
 				return ctrl.Result{}, err
 			}
 		}
@@ -96,27 +110,36 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Update ReferencedBy in NamespaceClassItems
 	if err := r.updateNamespaceClassItemReferences(ctx, nc); err != nil {
+		log.Error(err, "Failed to update NamespaceClassItem references", "class", nc.Name)
 		return ctrl.Result{}, err
 	}
 
 	// Check if it has the trigger annotation and remove it
 	if _, hasAnnotation := nc.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated]; hasAnnotation {
+		log.Info("Removing trigger annotation from NamespaceClass", "name", nc.Name)
 		delete(nc.Annotations, policyv1alpha.AnnotationNamespaceClassItemUpdated)
 		if err := r.Update(ctx, &nc); err != nil {
+			log.Error(err, "Failed to remove trigger annotation from NamespaceClass", "name", nc.Name)
 			return ctrl.Result{}, err
 		}
 	}
 
+	log.Info("NamespaceClass reconciliation completed successfully", "name", nc.Name)
 	return ctrl.Result{}, nil
 }
 
 // handleDeletion handles NamespaceClass deletion, cleaning up references
 func (r *NamespaceClassReconciler) handleDeletion(ctx context.Context, nc *policyv1alpha.NamespaceClass) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	log.Info("Starting NamespaceClass deletion cleanup", "name", nc.Name)
+
 	// Clean up references in NamespaceClassItems
 	for _, itemName := range nc.Spec.Items {
+		log.Info("Cleaning up reference in NamespaceClassItem", "class", nc.Name, "item", itemName)
 		var nci policyv1alpha.NamespaceClassItem
 		if err := r.Get(ctx, client.ObjectKey{Name: itemName}, &nci); err != nil {
 			if client.IgnoreNotFound(err) != nil {
+				log.Error(err, "Failed to get NamespaceClassItem during deletion cleanup", "class", nc.Name, "item", itemName)
 				return ctrl.Result{}, err
 			}
 			continue
@@ -131,16 +154,21 @@ func (r *NamespaceClassReconciler) handleDeletion(ctx context.Context, nc *polic
 		}
 		nci.Status.ReferencedBy = newRefs
 		if err := r.Status().Update(ctx, &nci); err != nil {
+			log.Error(err, "Failed to update NamespaceClassItem status during deletion cleanup", "class", nc.Name, "item", itemName)
 			return ctrl.Result{}, err
 		}
+		log.Info("Successfully updated NamespaceClassItem reference", "class", nc.Name, "item", itemName)
 	}
 
 	// Remove finalizer
+	log.Info("Removing finalizer from NamespaceClass", "name", nc.Name, "finalizer", policyv1alpha.FinalizerNamespaceClass)
 	nc.Finalizers = removeString(nc.Finalizers, policyv1alpha.FinalizerNamespaceClass)
 	if err := r.Update(ctx, nc); err != nil {
+		log.Error(err, "Failed to remove finalizer from NamespaceClass", "name", nc.Name)
 		return ctrl.Result{}, err
 	}
 
+	log.Info("NamespaceClass deletion cleanup completed", "name", nc.Name)
 	return ctrl.Result{}, nil
 }
 
@@ -167,11 +195,16 @@ func removeString(slice []string, s string) []string {
 
 // updateNamespaceClassItemReferences maintains the ReferencedBy field in NamespaceClassItems
 func (r *NamespaceClassReconciler) updateNamespaceClassItemReferences(ctx context.Context, nc policyv1alpha.NamespaceClass) error {
+	log := logf.FromContext(ctx)
+	log.Info("Updating NamespaceClassItem references", "class", nc.Name, "items", nc.Spec.Items)
+
 	// For each item in the class, add this class to its ReferencedBy
 	for _, itemName := range nc.Spec.Items {
+		log.Info("Processing NamespaceClassItem reference", "class", nc.Name, "item", itemName)
 		var nci policyv1alpha.NamespaceClassItem
 		if err := r.Get(ctx, client.ObjectKey{Name: itemName}, &nci); err != nil {
 			if client.IgnoreNotFound(err) != nil {
+				log.Error(err, "Failed to get NamespaceClassItem for reference update", "class", nc.Name, "item", itemName)
 				return err
 			}
 			continue // Item doesn't exist, skip
@@ -187,18 +220,19 @@ func (r *NamespaceClassReconciler) updateNamespaceClassItemReferences(ctx contex
 		}
 
 		if !alreadyReferenced {
+			log.Info("Adding reference to NamespaceClassItem", "class", nc.Name, "item", itemName)
 			// Add reference
 			nci.Status.ReferencedBy = append(nci.Status.ReferencedBy, nc.Name)
 			if err := r.Status().Update(ctx, &nci); err != nil {
+				log.Error(err, "Failed to update NamespaceClassItem status with reference", "class", nc.Name, "item", itemName)
 				return err
 			}
+		} else {
+			log.Info("Reference already exists in NamespaceClassItem. No Update", "class", nc.Name, "item", itemName)
 		}
 	}
 
-	// Note: Cleanup of old references would require tracking previous state
-	// For now, we assume references are added but not removed automatically
-	// This could be improved with finalizers or additional logic
-
+	log.Info("NamespaceClassItem references update completed", "class", nc.Name)
 	return nil
 }
 

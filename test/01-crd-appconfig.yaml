@@ -1,0 +1,44 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: appconfigs.example.com
+spec:
+  group: example.com
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              replicas:
+                type: integer
+                minimum: 1
+                maximum: 10
+              image:
+                type: string
+              environment:
+                type: string
+                enum: ["dev", "staging", "prod"]
+              resources:
+                type: object
+                properties:
+                  cpu:
+                    type: string
+                  memory:
+                    type: string
+            required:
+            - replicas
+            - image
+            - environment
+  scope: Namespaced
+  names:
+    plural: appconfigs
+    singular: appconfig
+    kind: AppConfig
+    shortNames:
+    - ac

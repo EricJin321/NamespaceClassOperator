@@ -49,57 +49,75 @@ type NamespaceReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.4/pkg/reconcile
 func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	// Fetch the Namespace instance
 	var ns corev1.Namespace
 	if err := r.Get(ctx, req.NamespacedName, &ns); err != nil {
 		if client.IgnoreNotFound(err) != nil {
+			log.Error(err, "Failed to get Namespace", "namespace", req.NamespacedName)
 			return ctrl.Result{}, err
 		}
 		// Namespace not found, ignore
+		log.Info("Namespace not found, ignoring", "namespace", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
+
+	log.Info("Reconciling Namespace", "component", "controller", "controller", "namespace", "name", ns.Name, "labels", ns.Labels, "spec", ns.Spec)
 
 	// Check if the namespace has the label namespaceclass.akuity.io/name
 	labelKey := policyv1alpha.LabelNamespaceClassName
 	className, exists := ns.Labels[labelKey]
 	if !exists {
+		log.Info("Namespace does not have required label, checking for existing NamespaceState", "namespace", ns.Name, "labelKey", labelKey)
 		// No label, check if NamespaceState exists and delete it
 		var nsState policyv1alpha.NamespaceState
 		err := r.Get(ctx, client.ObjectKey{Name: ns.Name}, &nsState)
 		if err == nil {
+			log.Info("Deleting existing NamespaceState for namespace without label", "namespace", ns.Name, "namespaceState", nsState.Name)
 			// Exists, delete it
 			if err := r.Delete(ctx, &nsState); err != nil {
+				log.Error(err, "Failed to delete NamespaceState", "namespace", ns.Name, "namespaceState", nsState.Name)
 				return ctrl.Result{}, err
 			}
 		} else if client.IgnoreNotFound(err) != nil {
+			log.Error(err, "Failed to get NamespaceState for deletion", "namespace", ns.Name)
 			return ctrl.Result{}, err
 		}
 		// No label and no state, nothing to do
+		log.Info("No label and no existing NamespaceState, reconciliation complete", "namespace", ns.Name)
 		return ctrl.Result{}, nil
 	}
+
+	log.Info("Namespace has required label", "namespace", ns.Name, "className", className)
 
 	// Check if NamespaceState exists
 	var nsState policyv1alpha.NamespaceState
 	err := r.Get(ctx, client.ObjectKey{Name: ns.Name}, &nsState)
-	if err != nil && client.IgnoreNotFound(err) != nil {
+	if client.IgnoreNotFound(err) != nil {
+		log.Error(err, "Failed to get NamespaceState", "namespace", ns.Name)
 		return ctrl.Result{}, err
 	}
 
-	if client.IgnoreNotFound(err) == nil {
+	log.Info("Get NamespaceState result", "namespace", ns.Name, "err", err, "ignoreNotFound", client.IgnoreNotFound(err), "nsState", nsState)
+	if err == nil {
 		// NamespaceState exists, check if it matches
 		if nsState.Spec.NamespaceClass != className {
+			log.Info("NamespaceState class mismatch, updating", "namespace", ns.Name, "from", nsState.Spec.NamespaceClass, "to", className)
 			// Mismatch, add annotation for pending update
 			if nsState.Annotations == nil {
 				nsState.Annotations = make(map[string]string)
 			}
 			nsState.Annotations[policyv1alpha.AnnotationNamespaceClassPendingUpdate] = className
 			if err := r.Update(ctx, &nsState); err != nil {
+				log.Error(err, "Failed to update NamespaceState with pending update annotation", "namespace", ns.Name, "namespaceState", nsState.Name)
 				return ctrl.Result{}, err
 			}
+		} else {
+			log.Info("NamespaceState class matches, no action needed", "namespace", ns.Name, "class", className)
 		}
 	} else {
+		log.Info("NamespaceState does not exist, creating new one", "namespace", ns.Name, "class", className)
 		// NamespaceState does not exist, create it
 		nsState = policyv1alpha.NamespaceState{
 			ObjectMeta: metav1.ObjectMeta{
@@ -117,11 +135,15 @@ func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				NamespaceClass: className,
 			},
 		}
+		log.Info("Creating NamespaceState", "namespace", ns.Name, "spec", nsState.Spec)
 		if err := r.Create(ctx, &nsState); err != nil {
+			log.Error(err, "Failed to create NamespaceState", "namespace", ns.Name, "spec", nsState.Spec)
 			return ctrl.Result{}, err
 		}
+		log.Info("Successfully created NamespaceState", "namespace", ns.Name, "namespaceState", nsState.Name)
 	}
 
+	log.Info("Namespace reconciliation completed successfully", "namespace", ns.Name)
 	return ctrl.Result{}, nil
 }
 

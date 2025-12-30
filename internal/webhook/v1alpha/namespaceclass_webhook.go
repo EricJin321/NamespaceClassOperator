@@ -68,7 +68,7 @@ func (v *NamespaceClassCustomValidator) ValidateCreate(_ context.Context, obj ru
 	if !ok {
 		return nil, fmt.Errorf("expected a NamespaceClass object but got %T", obj)
 	}
-	namespaceclasslog.Info("Validation for NamespaceClass upon creation", "name", namespaceclass.GetName())
+	namespaceclasslog.Info("Validation for NamespaceClass upon creation", "component", "webhook", "webhook", "namespaceclass", "name", namespaceclass.GetName())
 
 	// Validate the spec
 	if err := v.validateSpec(namespaceclass.Spec); err != nil {
@@ -84,7 +84,7 @@ func (v *NamespaceClassCustomValidator) ValidateUpdate(_ context.Context, oldObj
 	if !ok {
 		return nil, fmt.Errorf("expected a NamespaceClass object for the newObj but got %T", newObj)
 	}
-	namespaceclasslog.Info("Validation for NamespaceClass upon update", "name", namespaceclass.GetName())
+	namespaceclasslog.Info("Validation for NamespaceClass upon update", "component", "webhook", "webhook", "namespaceclass", "name", namespaceclass.GetName())
 
 	// Validate the spec
 	if err := v.validateSpec(namespaceclass.Spec); err != nil {
@@ -100,7 +100,7 @@ func (v *NamespaceClassCustomValidator) ValidateDelete(ctx context.Context, obj 
 	if !ok {
 		return nil, fmt.Errorf("expected a NamespaceClass object but got %T", obj)
 	}
-	namespaceclasslog.Info("Validation for NamespaceClass upon deletion", "name", namespaceclass.GetName())
+	namespaceclasslog.Info("Validation for NamespaceClass upon deletion", "component", "webhook", "webhook", "namespaceclass", "name", namespaceclass.GetName())
 
 	// Query all namespaces to check if any reference this NamespaceClass
 	var nsList corev1.NamespaceList

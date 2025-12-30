@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  k3scluster:
+    image: rancher/k3s:latest
+    container_name: k3s-server
+    privileged: true
+    command:
+      - server
+      - --disable=traefik
+      - --write-kubeconfig-mode=644
+      - --tls-san=127.0.0.1
+      - --tls-san=localhost
+      - --tls-san=k3s.localhost
+      - --bind-address=0.0.0.0
+    ports:
+      - "6443:6443"  # Kubernetes API server
+    environment:
+      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+      - K3S_KUBECONFIG_MODE=644
+    volumes:
+      - k3s-storage:/var/lib/rancher/k3s
+      - ./kubeconfig:/output
+    networks:
+      - k3s-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "kubectl", "get", "nodes"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  k3s-storage:
+
+networks:
+  k3s-network:
+    driver: bridge

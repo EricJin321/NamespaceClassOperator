@@ -14,12 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch;create;update;patch;delete
+
 package v1alpha
 
 import (
 	"context"
 	"fmt"
 
+	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,7 +60,7 @@ func SetupNamespaceClassItemWebhookWithManager(mgr ctrl.Manager) error {
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 // NOTE: If you want to customise the 'path', use the flags '--defaulting-path' or '--validation-path'.
-// +kubebuilder:webhook:path=/validate-policy-akuity-io-v1alpha-namespaceclassitem,mutating=false,failurePolicy=fail,sideEffects=None,groups=policy.akuity.io,resources=namespaceclassitems,verbs=create;update,versions=v1alpha,name=vnamespaceclassitem-v1alpha.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-policy-akuity-io-v1alpha-namespaceclassitem,mutating=false,failurePolicy=fail,sideEffects=None,groups=policy.akuity.io,resources=namespaceclassitems,verbs=create;update;delete,versions=v1alpha,name=vnamespaceclassitem-v1alpha.kb.io,admissionReviewVersions=v1
 
 // NamespaceClassItemCustomValidator struct is responsible for validating the NamespaceClassItem resource
 // when it is created, updated, or deleted.
@@ -77,7 +80,7 @@ func (v *NamespaceClassItemCustomValidator) ValidateCreate(_ context.Context, ob
 	if !ok {
 		return nil, fmt.Errorf("expected a NamespaceClassItem object but got %T", obj)
 	}
-	namespaceclassitemlog.Info("Validation for NamespaceClassItem upon creation", "name", namespaceclassitem.GetName())
+	namespaceclassitemlog.Info("Validation for NamespaceClassItem upon creation", "component", "webhook", "webhook", "namespaceclassitem", "name", namespaceclassitem.GetName())
 
 	// Validate the spec by attempting a dry-run create in namespaceclass-test
 	if err := v.validateSpec(namespaceclassitem.Spec); err != nil {
@@ -93,7 +96,7 @@ func (v *NamespaceClassItemCustomValidator) ValidateUpdate(_ context.Context, ol
 	if !ok {
 		return nil, fmt.Errorf("expected a NamespaceClassItem object for the newObj but got %T", newObj)
 	}
-	namespaceclassitemlog.Info("Validation for NamespaceClassItem upon update", "name", namespaceclassitem.GetName())
+	namespaceclassitemlog.Info("Validation for NamespaceClassItem upon update", "component", "webhook", "webhook", "namespaceclassitem", "name", namespaceclassitem.GetName())
 
 	// Validate the spec by attempting a dry-run create in namespaceclass-test
 	if err := v.validateSpec(namespaceclassitem.Spec); err != nil {
@@ -114,7 +117,7 @@ func (v *NamespaceClassItemCustomValidator) ValidateDelete(ctx context.Context, 
 	if !ok {
 		return nil, fmt.Errorf("expected a NamespaceClassItem object but got %T", obj)
 	}
-	namespaceclassitemlog.Info("Validation for NamespaceClassItem upon deletion", "name", namespaceclassitem.GetName())
+	namespaceclassitemlog.Info("Validation for NamespaceClassItem upon deletion", "component", "webhook", "webhook", "namespaceclassitem", "name", namespaceclassitem.GetName())
 
 	// Check if any NamespaceClass references this item
 	var ncList policyv1alpha.NamespaceClassList
@@ -132,23 +135,28 @@ func (v *NamespaceClassItemCustomValidator) ValidateDelete(ctx context.Context, 
 	return nil, nil
 }
 
-// validateSpec validates the spec by attempting a dry-run create in the namespaceclass-test namespace
+// validateSpec validates the spec by performing a dry-run create
 func (v *NamespaceClassItemCustomValidator) validateSpec(spec policyv1alpha.NamespaceClassItemSpec) error {
+	// Perform dry-run create
+	obj := &unstructured.Unstructured{}
+	jsonData, err := yaml.YAMLToJSON([]byte(spec.Spec))
+	if err != nil {
+		return fmt.Errorf("failed to convert YAML to JSON: %w", err)
+	}
+	_, _, err = unstructured.UnstructuredJSONScheme.Decode(jsonData, nil, &obj)
+	if err != nil {
+		return fmt.Errorf("failed to decode JSON into unstructured: %w", err)
+	}
+
 	gvr := schema.GroupVersionResource{
 		Group:    spec.Group,
 		Version:  spec.Version,
 		Resource: spec.Resource,
 	}
 
-	obj := &unstructured.Unstructured{}
-	if err := yaml.Unmarshal([]byte(spec.Spec), obj); err != nil {
-		return fmt.Errorf("failed to unmarshal spec: %w", err)
-	}
-
-	// Attempt dry-run create
-	_, err := v.Client.Resource(gvr).Namespace("namespaceclass-test").Create(context.TODO(), obj, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+	_, err = v.Client.Resource(gvr).Namespace("namespaceclass-test").Create(context.TODO(), obj, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
 	if err != nil {
-		return fmt.Errorf("dry-run create failed for GVR %v: %w", gvr, err)
+		return fmt.Errorf("dry-run create failed: %w", err)
 	}
 
 	return nil
