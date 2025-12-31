@@ -1,0 +1,10 @@
+apiVersion: policy.akuity.io/v1alpha
+kind: NamespaceClass
+metadata:
+  name: development-class
+  namespace: namespaceclassoperator-system
+spec:
+  # Reference to the NamespaceClassItem we created
+  items:
+  - appconfig-dev-item
+  - appconfig-more-item

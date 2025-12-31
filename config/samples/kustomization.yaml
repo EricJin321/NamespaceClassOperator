@@ -1,0 +1,7 @@
+## Append samples of your project ##
+resources:
+- policy_v1alpha_namespaceclassitem.yaml
+- policy_v1alpha_namespaceclass.yaml
+- policy_v1alpha_namespaceiteminstance.yaml
+- policy_v1alpha_namespacestate.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
