@@ -27,4 +27,7 @@ const (
 
 	// Label
 	LabelNamespaceClassName = "namespaceclass.akuity.io/name"
+
+	// Annotation values
+	AnnotationValueTrue = "true"
 )

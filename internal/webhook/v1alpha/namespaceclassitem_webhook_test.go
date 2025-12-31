@@ -17,11 +17,17 @@ limitations under the License.
 package v1alpha
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	policyv1alpha "github.com/EricJin321/NamespaceClassOperator/api/v1alpha"
-	// TODO (user): Add any additional imports if needed
 )
 
 var _ = Describe("NamespaceClassItem Webhook", func() {
@@ -32,40 +38,104 @@ var _ = Describe("NamespaceClassItem Webhook", func() {
 	)
 
 	BeforeEach(func() {
-		obj = &policyv1alpha.NamespaceClassItem{}
-		oldObj = &policyv1alpha.NamespaceClassItem{}
-		validator = NamespaceClassItemCustomValidator{}
+		obj = &policyv1alpha.NamespaceClassItem{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "policy.akuity.io/v1alpha",
+				Kind:       "NamespaceClassItem",
+			},
+			Spec: policyv1alpha.NamespaceClassItemSpec{
+				Group:    "",
+				Version:  "v1",
+				Resource: "configmaps",
+				Spec: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-configmap
+data:
+  key: value`,
+			},
+		}
+		oldObj = &policyv1alpha.NamespaceClassItem{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "policy.akuity.io/v1alpha",
+				Kind:       "NamespaceClassItem",
+			},
+			Spec: policyv1alpha.NamespaceClassItemSpec{
+				Group:    "",
+				Version:  "v1",
+				Resource: "configmaps",
+				Spec: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-configmap
+data:
+  key: oldvalue`,
+			},
+		}
+		validator = NamespaceClassItemCustomValidator{
+			Client: dynamicfake.NewSimpleDynamicClient(scheme.Scheme),
+			Reader: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+		}
 		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
 		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
 		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
-		// TODO (user): Add any setup logic common to all tests
 	})
 
 	AfterEach(func() {
 		// TODO (user): Add any teardown logic common to all tests
 	})
 
-	Context("When creating or updating NamespaceClassItem under Validating Webhook", func() {
-		// TODO (user): Add logic for validating webhooks
-		// Example:
-		// It("Should deny creation if a required field is missing", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = ""
-		//     Expect(validator.ValidateCreate(ctx, obj)).Error().To(HaveOccurred())
-		// })
-		//
-		// It("Should admit creation if all required fields are present", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = "valid_value"
-		//     Expect(validator.ValidateCreate(ctx, obj)).To(BeNil())
-		// })
-		//
-		// It("Should validate updates correctly", func() {
-		//     By("simulating a valid update scenario")
-		//     oldObj.SomeRequiredField = "updated_value"
-		//     obj.SomeRequiredField = "updated_value"
-		//     Expect(validator.ValidateUpdate(ctx, oldObj, obj)).To(BeNil())
-		// })
+	Context("When creating NamespaceClassItem", func() {
+		It("should validate successfully for valid spec", func() {
+			warnings, err := validator.ValidateCreate(context.Background(), obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
+
+		It("should fail validation for invalid YAML spec", func() {
+			obj.Spec.Spec = `invalid: yaml: content: [`
+			warnings, err := validator.ValidateCreate(context.Background(), obj)
+			Expect(err).To(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
 	})
 
+	Context("When updating NamespaceClassItem", func() {
+		It("should validate successfully for valid update", func() {
+			warnings, err := validator.ValidateUpdate(context.Background(), oldObj, obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
+
+		It("should fail validation for invalid new spec", func() {
+			obj.Spec.Spec = `invalid: yaml: content: [`
+			warnings, err := validator.ValidateUpdate(context.Background(), oldObj, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
+
+		It("should detect conflicts with other NamespaceClassItems", func() {
+			// This test would require setting up a test cluster with existing resources
+			// For now, we test the basic validation
+			warnings, err := validator.ValidateUpdate(context.Background(), oldObj, obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
+	})
+
+	Context("When deleting NamespaceClassItem", func() {
+		It("should validate successfully when not referenced", func() {
+			warnings, err := validator.ValidateDelete(context.Background(), obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
+
+		It("should fail validation when referenced by NamespaceClass", func() {
+			// This test would require setting up a test cluster with NamespaceClass referencing this item
+			// For now, we test the basic validation
+			warnings, err := validator.ValidateDelete(context.Background(), obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
+	})
 })

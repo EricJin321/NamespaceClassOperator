@@ -1,0 +1,24 @@
+apiVersion: policy.akuity.io/v1alpha
+kind: NamespaceClassItem
+metadata:
+  name: appconfig-more-item
+  namespace: namespaceclassoperator-system
+spec:
+  # Reference to the custom AppConfig CRD
+  group: example.com
+  version: v1
+  resource: appconfigs
+
+  # Complete custom resource definition
+  spec: |
+    apiVersion: example.com/v1
+    kind: AppConfig
+    metadata:
+      name: more-app-config
+    spec:
+      replicas: 2
+      image: nginx:1.21
+      environment: dev
+      resources:
+        cpu: "100m"
+        memory: "128Mi"

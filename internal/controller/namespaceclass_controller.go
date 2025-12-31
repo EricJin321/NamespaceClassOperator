@@ -83,7 +83,7 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// List all NamespaceState that reference this class using field selector
+	// List all NamespaceState that reference this class
 	var nsList policyv1alpha.NamespaceStateList
 	if err := r.List(ctx, &nsList, client.MatchingFields{"spec.namespaceClass": nc.Name}); err != nil {
 		log.Error(err, "Failed to list NamespaceStates for class", "class", nc.Name)
@@ -100,7 +100,7 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if nsState.Annotations == nil {
 				nsState.Annotations = make(map[string]string)
 			}
-			nsState.Annotations[policyv1alpha.AnnotationNamespaceClassUpdated] = "true"
+			nsState.Annotations[policyv1alpha.AnnotationNamespaceClassUpdated] = policyv1alpha.AnnotationValueTrue
 			if err := r.Update(ctx, &nsState); err != nil {
 				log.Error(err, "Failed to add update annotation to NamespaceState", "class", nc.Name, "namespaceState", nsState.Name)
 				return ctrl.Result{}, err

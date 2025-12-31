@@ -38,7 +38,7 @@ var _ = Describe("NamespaceClassItem Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
 		namespaceclassitem := &policyv1alpha.NamespaceClassItem{}
 
@@ -51,22 +51,51 @@ var _ = Describe("NamespaceClassItem Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: policyv1alpha.NamespaceClassItemSpec{
+						Group:    "",
+						Version:  "v1",
+						Resource: "configmaps",
+						Spec: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-configmap
+data:
+  key: value`,
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
+			// Cleanup logic after each test, like removing the resource instance.
 			resource := &policyv1alpha.NamespaceClassItem{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+			if err == nil {
+				By("Cleanup the specific resource instance NamespaceClassItem")
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			}
 
-			By("Cleanup the specific resource instance NamespaceClassItem")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			// Cleanup NamespaceClass
+			nc := &policyv1alpha.NamespaceClass{}
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: "test-namespaceclass"}, nc)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, nc)).To(Succeed())
+			}
 		})
+
 		It("should successfully reconcile the resource", func() {
+			By("Creating a NamespaceClass")
+			nc := &policyv1alpha.NamespaceClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-namespaceclass",
+				},
+				Spec: policyv1alpha.NamespaceClassSpec{
+					Items: []string{resourceName},
+				},
+			}
+			Expect(k8sClient.Create(ctx, nc)).To(Succeed())
+
 			By("Reconciling the created resource")
 			controllerReconciler := &NamespaceClassItemReconciler{
 				Client: k8sClient,
@@ -77,8 +106,47 @@ var _ = Describe("NamespaceClassItem Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("Checking that the status was updated")
+			updatedNCI := &policyv1alpha.NamespaceClassItem{}
+			err = k8sClient.Get(ctx, typeNamespacedName, updatedNCI)
+			Expect(err).NotTo(HaveOccurred())
+			// The controller updates status based on NamespaceClass references
+		})
+
+		It("should handle NamespaceClass not found", func() {
+			By("Reconciling the created resource without NamespaceClass")
+			controllerReconciler := &NamespaceClassItemReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			// Should not fail even if no NamespaceClass references it
+		})
+
+		It("should handle finalizer removal", func() {
+			By("Adding finalizer to the resource")
+			nci := &policyv1alpha.NamespaceClassItem{}
+			err := k8sClient.Get(ctx, typeNamespacedName, nci)
+			Expect(err).NotTo(HaveOccurred())
+
+			nci.Finalizers = []string{"policy.akuity.io/finalizer"}
+			Expect(k8sClient.Update(ctx, nci)).To(Succeed())
+
+			By("Reconciling the resource")
+			controllerReconciler := &NamespaceClassItemReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

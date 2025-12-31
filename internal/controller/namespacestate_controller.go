@@ -104,7 +104,7 @@ func (r *NamespaceStateReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if nii.Annotations == nil {
 				nii.Annotations = make(map[string]string)
 			}
-			nii.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated] = "true"
+			nii.Annotations[policyv1alpha.AnnotationNamespaceClassItemUpdated] = policyv1alpha.AnnotationValueTrue
 			if err := r.Update(ctx, &nii); err != nil {
 				return ctrl.Result{}, err
 			}
