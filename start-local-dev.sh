@@ -38,6 +38,18 @@ kubectl get nodes
 print_status "Installing CRDs..."
 make install
 
+# Install cert-manager
+print_status "Installing cert-manager..."
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
+
+# Wait for cert-manager to be ready
+print_status "Waiting for cert-manager to be ready..."
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
+
+kubectl create namespace namespaceclass-test
+
 # Deploy the operator (assuming image is already built)
 print_status "Deploying the operator..."
 make deploy IMG=yijinregistry.azurecr.io/namespaceclass-operator:latest

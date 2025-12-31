@@ -19,13 +19,13 @@ package controller
 import (
 	"context"
 
-	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	policyv1alpha "github.com/EricJin321/NamespaceClassOperator/api/v1alpha"
 )
@@ -130,7 +130,7 @@ func (r *NamespaceItemInstanceReconciler) Reconcile(ctx context.Context, req ctr
 		// Check if the resource exists
 		existing := &unstructured.Unstructured{}
 		existing.SetGroupVersionKind(obj.GroupVersionKind())
-		err := r.Get(ctx, client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}, existing)
+		err = r.Get(ctx, client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}, existing)
 		if err != nil {
 			if client.IgnoreNotFound(err) != nil {
 				log.Error(err, "Failed to check if resource exists", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
@@ -147,7 +147,8 @@ func (r *NamespaceItemInstanceReconciler) Reconcile(ctx context.Context, req ctr
 			// Update the resource
 			log.Info("Updating existing resource", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
 			obj.SetResourceVersion(existing.GetResourceVersion())
-			if err := r.Update(ctx, &obj); err != nil {
+			err = r.Update(ctx, &obj)
+			if err != nil {
 				log.Error(err, "Failed to update resource", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
 				return ctrl.Result{}, err
 			}

@@ -15,6 +15,8 @@ limitations under the License.
 */
 
 // +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclassitems,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=policy.akuity.io,resources=namespaceclassitems/status,verbs=get;update;patch
 
 package v1alpha
 
@@ -22,7 +24,6 @@ import (
 	"context"
 	"fmt"
 
-	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -143,7 +144,7 @@ func (v *NamespaceClassItemCustomValidator) validateSpec(spec policyv1alpha.Name
 	if err != nil {
 		return fmt.Errorf("failed to convert YAML to JSON: %w", err)
 	}
-	_, _, err = unstructured.UnstructuredJSONScheme.Decode(jsonData, nil, &obj)
+	_, _, err = unstructured.UnstructuredJSONScheme.Decode(jsonData, nil, obj)
 	if err != nil {
 		return fmt.Errorf("failed to decode JSON into unstructured: %w", err)
 	}

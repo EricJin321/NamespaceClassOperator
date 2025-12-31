@@ -7,6 +7,9 @@
 bin/*
 Dockerfile.cross
 
+# Ignore kubeconfig folder
+kubeconfig/
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -26,5 +29,3 @@ go.work
 *.swo
 *~
 
-# Kubeconfig might contain secrets
-*.kubeconfig
