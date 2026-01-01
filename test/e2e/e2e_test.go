@@ -304,9 +304,22 @@ var _ = Describe("Manager", Ordered, func() {
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
 		It("should apply sample CRs and verify reconciliation", func() {
-			By("applying the AppConfig CRD")
-			cmd := exec.Command("kubectl", "apply", "-f", "config/samples/01-crd-appconfig.yaml")
+			By("creating namespaceclass-test namespace for testing")
+			cmd := exec.Command("kubectl", "create", "namespace", "namespaceclass-test", "--dry-run=client", "-o", "yaml")
+			output, _ := utils.Run(cmd)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = exec.Command("echo", output).Stdout
 			_, err := utils.Run(cmd)
+			if err != nil {
+				// Namespace might already exist, verify it
+				cmd = exec.Command("kubectl", "get", "namespace", "namespaceclass-test")
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred(), "Failed to create or verify namespaceclass-test namespace")
+			}
+
+			By("applying the AppConfig CRD")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/01-crd-appconfig.yaml")
+			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to apply AppConfig CRD")
 
 			By("waiting for AppConfig CRD to be established")
@@ -393,6 +406,8 @@ var _ = Describe("Manager", Ordered, func() {
 			cmd = exec.Command("kubectl", "delete", "-f", "config/samples/02-namespaceclassitem-appconfig.yaml", "--ignore-not-found=true")
 			_, _ = utils.Run(cmd)
 			cmd = exec.Command("kubectl", "delete", "-f", "config/samples/01-crd-appconfig.yaml", "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "namespace", "namespaceclass-test", "--ignore-not-found=true")
 			_, _ = utils.Run(cmd)
 		})
 	})
