@@ -1,9 +1,0 @@
-apiVersion: policy.akuity.io/v1alpha
-kind: NamespaceItemInstance
-metadata:
-  labels:
-    app.kubernetes.io/name: namespaceclassoperator
-    app.kubernetes.io/managed-by: kustomize
-  name: namespaceiteminstance-sample
-spec:
-  # TODO(user): Add fields here

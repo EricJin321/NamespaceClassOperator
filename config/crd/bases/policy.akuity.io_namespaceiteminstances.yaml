@@ -118,6 +118,22 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              currentResourceGVK:
+                description: |-
+                  CurrentResourceGVK records the GVK of the currently managed resource
+                  This is used to detect GVK changes and clean up old resources
+                properties:
+                  group:
+                    type: string
+                  kind:
+                    type: string
+                  version:
+                    type: string
+                required:
+                - group
+                - kind
+                - version
+                type: object
               observedGeneration:
                 description: ObservedGeneration is the generation of the NamespaceClassItem
                   last observed by the controller

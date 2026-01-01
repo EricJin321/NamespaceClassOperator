@@ -19,21 +19,19 @@ print_error() {
 }
 
 # Check if kubectl is configured
-if ! kubectl cluster-info &> /dev/null; then
-    print_error "kubectl is not configured or cluster is not accessible"
-    exit 1
+if kubectl cluster-info &> /dev/null; then
+    # Undeploy the operator
+    print_status "Undeploying the operator..."
+    make undeploy
+
+    # Uninstall CRDs
+    print_status "Uninstalling CRDs..."
+    make uninstall
+else
+    print_status "kubectl not configured, skipping operator cleanup..."
 fi
 
-# Undeploy the operator
-print_status "Undeploying the operator..."
-make undeploy
-
-# Uninstall CRDs
-print_status "Uninstalling CRDs..."
-make uninstall
-
 print_status "NamespaceClassOperator stopped"
-
 echo ""
-echo -e "${YELLOW}Note: The k3s cluster is still running. To stop it, run:${NC}"
+echo -e "${YELLOW}Note: To stop the K3S cluster and registry, run:${NC}"
 echo "  docker-compose down"

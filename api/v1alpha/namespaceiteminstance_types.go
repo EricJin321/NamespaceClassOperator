@@ -46,6 +46,11 @@ type NamespaceItemInstanceStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// CurrentResourceGVK records the GVK of the currently managed resource
+	// This is used to detect GVK changes and clean up old resources
+	// +optional
+	CurrentResourceGVK *metav1.GroupVersionKind `json:"currentResourceGVK,omitempty"`
+
 	// conditions represent the current state of the NamespaceItemInstance resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
 	//

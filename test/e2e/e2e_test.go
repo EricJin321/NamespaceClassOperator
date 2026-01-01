@@ -303,15 +303,98 @@ var _ = Describe("Manager", Ordered, func() {
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput, err := getMetricsOutput()
-		// Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+		It("should apply sample CRs and verify reconciliation", func() {
+			By("applying the AppConfig CRD")
+			cmd := exec.Command("kubectl", "apply", "-f", "config/samples/01-crd-appconfig.yaml")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply AppConfig CRD")
+
+			By("waiting for AppConfig CRD to be established")
+			verifyAppConfigCRD := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "crd", "appconfigs.example.com",
+					"-o", "jsonpath={.status.conditions[?(@.type=='Established')].status}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"), "AppConfig CRD not established")
+			}
+			Eventually(verifyAppConfigCRD, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("applying the NamespaceClassItem")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/02-namespaceclassitem-appconfig.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply NamespaceClassItem")
+
+			By("verifying NamespaceClassItem is created")
+			verifyNamespaceClassItem := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "namespaceclassitem", "appconfig-dev-item",
+					"-n", namespace, "-o", "jsonpath={.metadata.name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("appconfig-dev-item"))
+			}
+			Eventually(verifyNamespaceClassItem, 1*time.Minute, time.Second).Should(Succeed())
+
+			By("applying the NamespaceClass")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/03-namespaceclass-dev.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply NamespaceClass")
+
+			By("verifying NamespaceClass is created")
+			verifyNamespaceClass := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "namespaceclass", "development-class",
+					"-n", namespace, "-o", "jsonpath={.metadata.name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("development-class"))
+			}
+			Eventually(verifyNamespaceClass, 1*time.Minute, time.Second).Should(Succeed())
+
+			By("applying the test namespace with NamespaceClass label")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/04-namespace-test-app.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply test namespace")
+
+			By("verifying test namespace is created")
+			verifyTestNamespace := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "namespace", "test-app-namespace",
+					"-o", "jsonpath={.metadata.labels.namespaceclass\\.akuity\\.io/name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("development-class"))
+			}
+			Eventually(verifyTestNamespace, 1*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying AppConfig resource is created in test namespace")
+			verifyAppConfigCreated := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "appconfig", "my-app-config",
+					"-n", "test-app-namespace", "-o", "jsonpath={.spec.replicas}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("2"), "AppConfig not created or has wrong replicas")
+			}
+			Eventually(verifyAppConfigCreated, 3*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying reconciliation metrics")
+			verifyReconciliationMetrics := func(g Gomega) {
+				metricsOutput, err := getMetricsOutput()
+				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
+				// Check for successful reconciliation of NamespaceClass controller
+				g.Expect(metricsOutput).To(ContainSubstring(
+					`controller_runtime_reconcile_total{controller="namespaceclass"`),
+					"NamespaceClass reconciliation metrics not found")
+			}
+			Eventually(verifyReconciliationMetrics, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("cleaning up test resources")
+			cmd = exec.Command("kubectl", "delete", "-f", "config/samples/04-namespace-test-app.yaml", "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "-f", "config/samples/03-namespaceclass-dev.yaml", "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "-f", "config/samples/02-namespaceclassitem-appconfig.yaml", "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "-f", "config/samples/01-crd-appconfig.yaml", "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+		})
 	})
 })
 

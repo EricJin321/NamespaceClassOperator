@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -131,18 +132,60 @@ func (r *NamespaceItemInstanceReconciler) Reconcile(ctx context.Context, req ctr
 		existing := &unstructured.Unstructured{}
 		existing.SetGroupVersionKind(obj.GroupVersionKind())
 		err = r.Get(ctx, client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}, existing)
+
 		if err != nil {
 			if client.IgnoreNotFound(err) != nil {
 				log.Error(err, "Failed to check if resource exists", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
 				return ctrl.Result{}, err
 			}
-			// Create the resource
-			log.Info("Creating new resource", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
+
+			// Check if there's an old resource with different GVK that needs to be cleaned up
+			if nii.Status.CurrentResourceGVK != nil {
+				oldResource := &unstructured.Unstructured{}
+				oldGVK := schema.GroupVersionKind{
+					Group:   nii.Status.CurrentResourceGVK.Group,
+					Version: nii.Status.CurrentResourceGVK.Version,
+					Kind:    nii.Status.CurrentResourceGVK.Kind,
+				}
+				oldResource.SetGroupVersionKind(oldGVK)
+				if getErr := r.Get(ctx, client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}, oldResource); getErr == nil {
+					// Verify it's owned by this instance
+					ownerRefs := oldResource.GetOwnerReferences()
+					ownedByThis := false
+					for _, ownerRef := range ownerRefs {
+						if ownerRef.UID == nii.UID {
+							ownedByThis = true
+							break
+						}
+					}
+
+					if ownedByThis {
+						log.Info("Deleting old resource with different GVK", "namespaceItemInstance", nii.Name, "resource", oldResource.GetName(), "oldGVK", oldResource.GroupVersionKind(), "newGVK", obj.GroupVersionKind())
+						if err := r.Delete(ctx, oldResource); err != nil {
+							log.Error(err, "Failed to delete old resource with different GVK", "namespaceItemInstance", nii.Name, "resource", oldResource.GetName())
+							return ctrl.Result{}, err
+						}
+						log.Info("Successfully deleted old resource", "namespaceItemInstance", nii.Name, "resource", oldResource.GetName())
+					}
+				}
+			}
+
+			// Create the new resource
+			log.Info("Creating new resource", "namespaceItemInstance", nii.Name, "resource", obj.GetName(), "gvk", obj.GroupVersionKind())
 			if err := r.Create(ctx, &obj); err != nil {
 				log.Error(err, "Failed to create resource", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
 				return ctrl.Result{}, err
 			}
 			log.Info("Successfully created resource", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
+
+			// Update status with current GVK
+			currentGVK := obj.GroupVersionKind()
+			metav1GVK := &metav1.GroupVersionKind{
+				Group:   currentGVK.Group,
+				Version: currentGVK.Version,
+				Kind:    currentGVK.Kind,
+			}
+			nii.Status.CurrentResourceGVK = metav1GVK
 		} else {
 			// Update the resource
 			log.Info("Updating existing resource", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
@@ -153,6 +196,15 @@ func (r *NamespaceItemInstanceReconciler) Reconcile(ctx context.Context, req ctr
 				return ctrl.Result{}, err
 			}
 			log.Info("Successfully updated resource", "namespaceItemInstance", nii.Name, "resource", obj.GetName())
+
+			// Update status with current GVK
+			currentGVK := obj.GroupVersionKind()
+			metav1GVK := &metav1.GroupVersionKind{
+				Group:   currentGVK.Group,
+				Version: currentGVK.Version,
+				Kind:    currentGVK.Kind,
+			}
+			nii.Status.CurrentResourceGVK = metav1GVK
 		}
 
 		// Update status

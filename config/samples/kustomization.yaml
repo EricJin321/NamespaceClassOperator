@@ -1,7 +1,7 @@
 ## Append samples of your project ##
 resources:
-- policy_v1alpha_namespaceclassitem.yaml
-- policy_v1alpha_namespaceclass.yaml
-- policy_v1alpha_namespaceiteminstance.yaml
-- policy_v1alpha_namespacestate.yaml
+- 01-crd-appconfig.yaml
+- 02-namespaceclassitem-appconfig.yaml
+- 03-namespaceclass-dev.yaml
+- 04-namespace-test-app.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

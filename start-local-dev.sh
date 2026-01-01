@@ -9,7 +9,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}🚀 Setting up kubectl for local k3s development environment${NC}"
+echo -e "${BLUE}🚀 Setting up kubectl for local K3S development environment${NC}"
 
 # Function to print status messages
 print_status() {
@@ -23,9 +23,9 @@ print_error() {
 # Create kubeconfig directory if it doesn't exist
 mkdir -p kubeconfig
 
-# Copy kubeconfig from container
-print_status "Copying kubeconfig from k3s container..."
-docker cp k3s-server:/output/kubeconfig.yaml kubeconfig/config
+# Copy kubeconfig from K3S container (assuming docker-compose is already running)
+print_status "Setting up kubeconfig..."
+cp kubeconfig/kubeconfig.yaml kubeconfig/config
 
 # Set KUBECONFIG environment variable
 export KUBECONFIG=$(pwd)/kubeconfig/config
@@ -48,21 +48,23 @@ kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n
 kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
 kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
 
-kubectl create namespace namespaceclass-test
+# Create test namespace
+kubectl create namespace namespaceclass-test --dry-run=client -o yaml | kubectl apply -f -
 
-# Deploy the operator (assuming image is already built)
+# Deploy the operator (assuming image is already built and pushed to local registry)
 print_status "Deploying the operator..."
-make deploy IMG=yijinregistry.azurecr.io/namespaceclass-operator:latest
+make deploy IMG=localhost:5000/namespaceclass-operator:latest
 
 # Wait for deployment to be ready
 print_status "Waiting for operator deployment to be ready..."
 kubectl wait --for=condition=available --timeout=300s deployment/namespaceclassoperator-controller-manager -n namespaceclassoperator-system
 
-print_status "🎉 NamespaceClassOperator is now running locally!"
+print_status "🎉 K3S development environment is now running!"
 echo ""
 echo -e "${BLUE}Useful commands:${NC}"
+echo "  • View nodes: kubectl get nodes"
 echo "  • View pods: kubectl get pods -n namespaceclassoperator-system"
 echo "  • View logs: kubectl logs -f deployment/namespaceclassoperator-controller-manager -n namespaceclassoperator-system"
+echo "  • Rebuild and redeploy: make docker-build IMG=localhost:5000/namespaceclass-operator:latest && make docker-push IMG=localhost:5000/namespaceclass-operator:latest && make deploy IMG=localhost:5000/namespaceclass-operator:latest"
 echo ""
 echo -e "${YELLOW}Note: Your kubeconfig is available at: $(pwd)/kubeconfig/config${NC}"
-echo -e "${YELLOW}You can set KUBECONFIG=$(pwd)/kubeconfig/config to use kubectl with this cluster${NC}"

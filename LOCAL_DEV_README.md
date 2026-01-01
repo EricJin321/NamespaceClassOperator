@@ -4,9 +4,10 @@ This directory contains files to set up a local Kubernetes development environme
 
 ## Files
 
-- `docker-compose.yml`: Docker Compose configuration for running k3s in a container
-- `start-local-dev.sh`: Script to start the cluster and deploy the NamespaceClassOperator
-- `stop-local-dev.sh`: Script to stop the local development environment
+- `docker-compose.yml`: Docker Compose configuration for running k3s and local registry in containers
+- `registries.yaml`: K3S registry configuration for local Docker registry
+- `start-local-dev.sh`: Script to configure kubectl and deploy the NamespaceClassOperator
+- `stop-local-dev.sh`: Script to stop the operator and clean up resources
 - `LOCAL_DEV_README.md`: This documentation file
 
 ## Prerequisites
@@ -18,12 +19,18 @@ This directory contains files to set up a local Kubernetes development environme
 
 ## Quick Start
 
-1. **Start the k3s cluster:**
+1. **Start the k3s cluster and registry:**
    ```bash
    docker-compose up -d
    ```
 
-2. **Deploy the operator:**
+2. **Build and push the operator image:**
+   ```bash
+   make docker-build IMG=localhost:5000/namespaceclass-operator:latest
+   make docker-push IMG=localhost:5000/namespaceclass-operator:latest
+   ```
+
+3. **Deploy the operator:**
    ```bash
    ./start-local-dev.sh
    ```
@@ -55,8 +62,9 @@ This directory contains files to set up a local Kubernetes development environme
    # Check created resources
    kubectl get namespaceclass
    kubectl get namespaceclassitem
-   kubectl get namespaceiteminstance
    kubectl get namespacestate
+   kubectl get namespaceiteminstance -n test-app-namespace
+   kubectl get appconfig -n test-app-namespace
    ```
 
 5. **Stop the operator:**
@@ -74,69 +82,3 @@ This directory contains files to set up a local Kubernetes development environme
    docker-compose down
    # or: docker compose down
    ```
-
-## Useful Commands
-
-### Cluster Management
-```bash
-# Start cluster
-docker-compose up -d
-
-# Deploy operator
-./start-local-dev.sh
-
-# Stop operator (keeps cluster running)
-./stop-local-dev.sh
-
-# Stop cluster
-docker-compose down
-
-# Stop and remove volumes (reset cluster)
-docker-compose down -v
-
-# View cluster logs
-docker-compose logs -f k3scluster
-```
-
-### kubectl Configuration
-The script automatically sets up kubectl configuration. If you need to configure it manually:
-
-```bash
-export KUBECONFIG=$(pwd)/kubeconfig/config
-```
-
-### Operator Management
-```bash
-# Rebuild and redeploy operator
-make docker-build IMG=namespaceclassoperator:local
-make deploy IMG=namespaceclassoperator:local
-
-# View CRDs
-kubectl get crd | grep policy.akuity.io
-
-# Clean up
-make undeploy
-make uninstall
-```
-
-## Troubleshooting
-
-1. **k3s fails to start:**
-   - Check Docker resources (k3s needs ~2GB RAM)
-   - Try: `docker-compose down -v` then restart
-
-2. **Operator fails to deploy:**
-   - Check pod status: `kubectl describe pod -n namespaceclassoperator-system`
-   - Check logs: `kubectl logs deployment/namespaceclassoperator-controller-manager -n namespaceclassoperator-system`
-
-3. **kubectl connection issues:**
-   - Verify kubeconfig: `kubectl config current-context`
-   - Check cluster status: `kubectl cluster-info`
-
-## Architecture
-
-- **k3s**: Lightweight Kubernetes distribution running in Docker
-- **NamespaceClassOperator**: Custom controller managing namespace policies
-- **Local Development**: Isolated environment for testing without affecting host system
-
-The setup provides a complete Kubernetes environment for developing and testing the operator locally.
