@@ -49,7 +49,7 @@ kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-we
 kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
 
 # Create test namespace
-kubectl create namespace namespaceclass-test --dry-run=client -o yaml | kubectl apply -f -
+# kubectl create namespace namespaceclass-test --dry-run=client -o yaml | kubectl apply -f -
 
 # Deploy the operator (assuming image is already built and pushed to local registry)
 print_status "Deploying the operator..."
