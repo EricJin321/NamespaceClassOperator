@@ -306,8 +306,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 		It("should apply sample CRs and verify reconciliation", func() {
 			By("applying the AppConfig CRD")
-			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/01-crd-appconfig.yaml")
-			_, err = utils.Run(cmd)
+			cmd := exec.Command("kubectl", "apply", "-f", "config/samples/01-crd-appconfig.yaml")
+			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to apply AppConfig CRD")
 
 			By("waiting for AppConfig CRD to be established")
